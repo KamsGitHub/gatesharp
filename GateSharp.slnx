@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GateSharp/GateSharp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GateSharp.Tests/GateSharp.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/GateSharp.DemoService/GateSharp.DemoService.csproj" />
+  </Folder>
+</Solution>
