@@ -6,8 +6,9 @@ namespace GateSharp.DemoService;
 
 /// <summary>
 /// A fake upstream service. It echoes back what it received so tests can see exactly what the
-/// gateway forwarded. Query knobs: <c>?delay_ms=N</c> waits before responding, and
-/// <c>?status=CODE</c> sets the response status.
+/// gateway forwarded. Query knobs: <c>?delay_ms=N</c> waits before responding,
+/// <c>?status=CODE</c> sets the response status, and <c>?chunks=N&amp;chunk_delay_ms=M</c> streams
+/// N text lines with a pause after each instead of the JSON echo.
 ///
 /// Run: <c>dotnet run --project tools/GateSharp.DemoService -- --name users-1 --urls http://127.0.0.1:9001</c>
 /// </summary>
@@ -43,6 +44,24 @@ public static class DemoServiceApp
             bodyBytes += read;
         }
 
+        context.Response.Headers["x-demo-service"] = name;
+
+        if (TryGetInt(request.Query["chunks"], out var chunks) && chunks > 0)
+        {
+            // Streams plain-text lines with a flush and a pause after each one, so tests can check
+            // that the gateway passes chunks through as they arrive instead of buffering the body.
+            TryGetInt(request.Query["chunk_delay_ms"], out var chunkDelayMs);
+            context.Response.ContentType = "text/plain";
+            for (var i = 0; i < Math.Min(chunks, 1000); i++)
+            {
+                await context.Response.WriteAsync($"chunk {i}\n", ct);
+                await context.Response.Body.FlushAsync(ct);
+                await Task.Delay(Math.Clamp(chunkDelayMs, 0, 60_000), ct);
+            }
+
+            return;
+        }
+
         var echo = new EchoResponse(
             Service: name,
             Method: request.Method,
@@ -53,7 +72,6 @@ public static class DemoServiceApp
 
         context.Response.StatusCode =
             TryGetInt(request.Query["status"], out var status) && status is >= 200 and <= 599 ? status : 200;
-        context.Response.Headers["x-demo-service"] = name;
         await context.Response.WriteAsJsonAsync(echo, DemoJsonContext.Default.EchoResponse, cancellationToken: ct);
     }
 

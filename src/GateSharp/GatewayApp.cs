@@ -1,3 +1,4 @@
+using GateSharp.Proxy;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 namespace GateSharp;
@@ -29,12 +30,47 @@ public static class GatewayApp
             kestrel.Limits.MaxRequestHeaderCount = 64;
         });
 
+        // Registered with a factory, not as an instance: the container only disposes singletons it
+        // created itself, and disposing the invoker is what closes the pooled upstream connections.
+        builder.Services.AddSingleton(_ => UpstreamClient.Create());
+
         var app = builder.Build();
 
+        // Read and validated at startup: a bad upstream URL stops the gateway from starting,
+        // rather than turning into a 502 on every request.
+        var upstream = ReadUpstream(app.Configuration);
+        var forwarder = upstream is null
+            ? null
+            : new RequestForwarder(
+                app.Services.GetRequiredService<HttpMessageInvoker>(),
+                upstream,
+                app.Services.GetRequiredService<ILogger<RequestForwarder>>());
+
         // A single terminal handler instead of ASP.NET Core endpoint routing. The gateway owns
-        // the whole URL space, and Milestone 3 replaces this with GateSharp's own router.
-        app.Run(GatewayHandler.HandleAsync);
+        // the whole URL space, and Milestone 3 adds GateSharp's own router inside it.
+        app.Run(new GatewayHandler(forwarder).HandleAsync);
 
         return app;
+    }
+
+    private static Uri? ReadUpstream(IConfiguration configuration)
+    {
+        var value = configuration["Gateway:Upstream"];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttp
+            || uri.Query.Length > 0
+            || uri.Fragment.Length > 0
+            || uri.UserInfo.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Gateway:Upstream must be an absolute http:// URL with no query, fragment or credentials. Got '{value}'.");
+        }
+
+        return uri;
     }
 }

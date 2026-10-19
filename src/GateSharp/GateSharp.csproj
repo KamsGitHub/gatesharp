@@ -2,4 +2,7 @@
   <PropertyGroup>
     <RootNamespace>GateSharp</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="GateSharp.Tests" />
+  </ItemGroup>
 </Project>
